@@ -7,33 +7,50 @@ name = "mathbridge-processor"
 version = "0.1.0"
 description = "Process MathBridge dataset with LaTeX validation, speech generation, and cleaning"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Stefan van Rensburg", email = "sjvrensburg@users.noreply.github.com"},
+]
+maintainers = [
+    {name = "Stefan van Rensburg", email = "sjvrensburg@users.noreply.github.com"},
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
+
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: System Shells",
     "Topic :: Text Processing :: Linguistic",
+    "Topic :: Utilities",
 ]
-keywords = ["mathematics", "latex", "speech", "accessibility", "nlp"]
+keywords = ["mathematics", "latex", "speech", "accessibility", "nlp", "cli", "command-line", "dataset", "processing", "mathbridge"]
 
 dependencies = [
     "datasets>=2.14.0",
     "pandas>=1.5.0",
     "tqdm>=4.64.0",
-    "latex-validator>=1.0.0",
+    "latex-validator @ git+https://github.com/sjvrensburg/latex-validator.git",
     "huggingface-hub>=0.16.0",
     "pyarrow>=12.0.0",
     "typer>=0.9.0",
     "rich>=13.0.0",
     "pydantic>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sjvrensburg/mathbridge-processor"
+Repository = "https://github.com/sjvrensburg/mathbridge-processor"
+Issues = "https://github.com/sjvrensburg/mathbridge-processor/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -51,6 +68,9 @@ mathbridge-process = "mathbridge_processor.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mathbridge_processor"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.black]
 line-length = 88
