@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -21,6 +22,7 @@ class MathBridgeProcessor:
         self.config = config
         self.verbose = verbose
         self.cleaner = MathBridgeCleaner()
+        self._speech_cache: Dict[str, Optional[str]] = {}  # Cache for speech generation
         log_level = logging.DEBUG if verbose else logging.INFO
         logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
         logger.debug("Initialized MathBridgeProcessor with config: %s", self.config)
@@ -98,33 +100,131 @@ class MathBridgeProcessor:
         return expr
 
     def convert_to_speech_batch(self, expressions: List[str]) -> List[Optional[str]]:
-        """Convert LaTeX to spoken text using latex2sre."""
+        """Convert LaTeX to spoken text using latex2sre with caching and batch processing."""
         if not self.config.latex2sre_path or not Path(self.config.latex2sre_path).exists():
             # Tool missing: return None
             return [None for _ in expressions]
         
-        latex2sre = self.config.latex2sre_path
-        outputs: List[Optional[str]] = []
-        for expr in expressions:
-            try:
-                # Clean the expression by removing dollar signs and other delimiters
-                clean_expr = self._clean_latex_for_speech(expr)
+        # Clean all expressions first
+        cleaned_expressions = [self._clean_latex_for_speech(expr) for expr in expressions]
+        
+        # Check cache first and separate cached vs uncached expressions
+        results: List[Optional[str]] = [None] * len(expressions)
+        uncached_indices: List[int] = []
+        uncached_expressions: List[str] = []
+        
+        for i, clean_expr in enumerate(cleaned_expressions):
+            if clean_expr in self._speech_cache:
+                results[i] = self._speech_cache[clean_expr]
+                logger.debug(f"Cache hit for expression: {clean_expr[:50]}...")
+            else:
+                uncached_indices.append(i)
+                uncached_expressions.append(clean_expr)
+        
+        cache_hits = len(expressions) - len(uncached_expressions)
+        if cache_hits > 0:
+            logger.debug(f"Speech cache hits: {cache_hits}/{len(expressions)}")
+        
+        # Process uncached expressions in batch if any
+        if uncached_expressions:
+            batch_results = self._convert_to_speech_batch_file(uncached_expressions)
+            
+            # Update cache and results
+            for idx, batch_idx in enumerate(uncached_indices):
+                speech_result = batch_results[idx] if idx < len(batch_results) else None
+                clean_expr = uncached_expressions[idx]
                 
-                proc = subprocess.run(
-                    [latex2sre, "--domain", self.config.sre_domain.value, "--locale", self.config.sre_locale, clean_expr],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-                if proc.returncode == 0:
-                    outputs.append(proc.stdout.decode("utf-8").strip())
-                else:
-                    logger.debug("latex2sre failed for expr: %s, err: %s", clean_expr, proc.stderr.decode("utf-8", errors="ignore"))
-                    outputs.append(None)
-            except Exception as e:  # noqa: BLE001
-                logger.debug("latex2sre exception for expr: %s, err: %s", expr, e)
-                outputs.append(None)
-        return outputs
+                # Cache the result (including None for failed conversions)
+                self._speech_cache[clean_expr] = speech_result
+                results[batch_idx] = speech_result
+        
+        return results
+    
+    def _convert_to_speech_batch_file(self, expressions: List[str]) -> List[Optional[str]]:
+        """Convert expressions using latex2sre batch file processing."""
+        if not expressions:
+            return []
+            
+        latex2sre = self.config.latex2sre_path
+        
+        try:
+            # Create temporary input file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as input_file:
+                for expr in expressions:
+                    input_file.write(f"{expr}\n")
+                input_file_path = input_file.name
+            
+            # Create temporary output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as output_file:
+                output_file_path = output_file.name
+            
+            # Run latex2sre in batch mode
+            proc = subprocess.run(
+                [
+                    latex2sre,
+                    "--domain", self.config.sre_domain.value,
+                    "--locale", self.config.sre_locale,
+                    "--input", input_file_path,
+                    "--output", output_file_path,
+                    "--stream"  # Stream output line by line
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            
+            # Read results
+            results: List[Optional[str]] = []
+            if proc.returncode == 0:
+                try:
+                    with open(output_file_path, 'r') as f:
+                        for line in f:
+                            speech_text = line.strip()
+                            results.append(speech_text if speech_text else None)
+                    
+                    # Ensure we have the same number of results as expressions
+                    while len(results) < len(expressions):
+                        results.append(None)
+                        
+                    logger.debug(f"Batch processed {len(expressions)} expressions, got {len(results)} results")
+                    
+                except Exception as e:
+                    logger.error(f"Error reading batch output file: {e}")
+                    results = [None] * len(expressions)
+            else:
+                logger.debug(f"latex2sre batch processing failed: {proc.stderr.decode('utf-8', errors='ignore')}")
+                results = [None] * len(expressions)
+            
+            # Clean up temporary files
+            try:
+                os.unlink(input_file_path)
+                os.unlink(output_file_path)
+            except OSError as e:
+                logger.debug(f"Could not delete temporary files: {e}")
+            
+            return results
+            
+        except Exception as e:
+            logger.exception(f"Exception during batch speech conversion: {e}")
+            return [None] * len(expressions)
+
+    def get_cache_stats(self) -> Dict[str, int]:
+        """Get speech generation cache statistics."""
+        total_cached = len(self._speech_cache)
+        successful_cached = sum(1 for result in self._speech_cache.values() if result is not None)
+        failed_cached = total_cached - successful_cached
+        
+        return {
+            "total_expressions_cached": total_cached,
+            "successful_cached": successful_cached,
+            "failed_cached": failed_cached
+        }
+        
+    def clear_cache(self):
+        """Clear the speech generation cache."""
+        cache_size = len(self._speech_cache)
+        self._speech_cache.clear()
+        logger.debug(f"Cleared speech cache containing {cache_size} expressions")
 
     def process_dataset(self) -> ProcessingResult:
         """Main pipeline: clean, validate, convert, save."""
@@ -172,7 +272,18 @@ class MathBridgeProcessor:
 
         # Save remaining
         files = self._save_final_dataset(output_records, cleaning_agg)
-        result = ProcessingResult(config=self.config, stats=stats, output_files=files, errors=[], success=True)
+        
+        # Include cache statistics
+        cache_stats = self.get_cache_stats()
+        
+        result = ProcessingResult(
+            config=self.config, 
+            stats=stats, 
+            output_files=files, 
+            errors=[], 
+            success=True,
+            cache_stats=cache_stats
+        )
         return result
 
     def _process_batch(self, records: List[Dict]) -> Tuple[Dict[str, int], 'CleaningStats']:

@@ -32,6 +32,7 @@ class ProcessingResult(BaseModel):
     output_files: List[str]
     errors: List[str] = []
     success: bool = True
+    cache_stats: Optional[Dict[str, int]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return self.dict()
