@@ -1,0 +1,90 @@
+{
+  "scaling_results": [
+    {
+      "records": 500,
+      "duration": 11.945482969284058,
+      "records_per_second": 41.856825821582255,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    },
+    {
+      "records": 1000,
+      "duration": 15.492883205413818,
+      "records_per_second": 64.54576509365029,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    },
+    {
+      "records": 2000,
+      "duration": 26.11868119239807,
+      "records_per_second": 76.57354463142292,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    },
+    {
+      "records": 3000,
+      "duration": 36.71371555328369,
+      "records_per_second": 81.71333123845807,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    },
+    {
+      "records": 5000,
+      "duration": 58.08489632606506,
+      "records_per_second": 86.08089738048298,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    },
+    {
+      "records": 8000,
+      "duration": 88.41543436050415,
+      "records_per_second": 90.48193969596852,
+      "cache_size": 0,
+      "cache_hit_ratio": 0.0,
+      "speech_success_rate": 0.0
+    }
+  ],
+  "resource_results": [
+    {
+      "workers": 1,
+      "duration": 147.06459641456604,
+      "records_per_second": 13.59946614453776,
+      "efficiency": 13.59946614453776
+    },
+    {
+      "workers": 4,
+      "duration": 46.51376271247864,
+      "records_per_second": 42.99802646289553,
+      "efficiency": 10.749506615723883
+    },
+    {
+      "workers": 8,
+      "duration": 34.27744770050049,
+      "records_per_second": 58.34740140149927,
+      "efficiency": 7.293425175187409
+    },
+    {
+      "workers": 16,
+      "duration": 29.137988328933716,
+      "records_per_second": 68.63891828846747,
+      "efficiency": 4.289932393029217
+    },
+    {
+      "workers": 20,
+      "duration": 26.12402057647705,
+      "records_per_second": 76.55789407090222,
+      "efficiency": 3.827894703545111
+    },
+    {
+      "workers": 24,
+      "duration": 26.420014142990112,
+      "records_per_second": 75.70018657732815,
+      "efficiency": 3.1541744407220063
+    }
+  ]
+}

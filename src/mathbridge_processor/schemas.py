@@ -16,6 +16,7 @@ class ProcessingConfig(BaseModel):
     resume_from: int = 0
     output_path: str = "mathbridge_processed"
     latex2sre_path: str = "./latex2sre"
+    max_workers: Optional[int] = None  # None = auto-detect optimal workers
 
 
 class ProcessingStats(BaseModel):

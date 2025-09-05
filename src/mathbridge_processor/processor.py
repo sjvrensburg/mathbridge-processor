@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -58,6 +59,11 @@ class MathBridgeProcessor:
             # Return all as valid if tool missing, but mark skipped
             return [{"expression": e, "valid": True, "skipped": True} for e in expressions]
         
+        # Use parallel processing for validation
+        if self.config.max_workers != 1 and len(expressions) > 1:
+            return self._validate_latex_parallel(expressions)
+        
+        # Fallback to sequential processing
         results = []
         for expr in expressions:
             try:
@@ -76,6 +82,48 @@ class MathBridgeProcessor:
                 logger.exception("Exception during latex validation for '%s': %s", expr, e)
                 results.append({"expression": expr, "valid": True, "skipped": True})
         
+        return results
+    
+    def _validate_latex_parallel(self, expressions: List[str]) -> List[Dict[str, Any]]:
+        """Validate LaTeX expressions in parallel using ThreadPoolExecutor."""
+        def validate_single(expr: str) -> Dict[str, Any]:
+            try:
+                proc = subprocess.run(
+                    ["latex-validator"],
+                    input=expr.encode("utf-8"),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    return {"expression": expr, "valid": True}
+                else:
+                    return {"expression": expr, "valid": False, "error": proc.stderr.decode("utf-8", errors="ignore")}
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Exception during latex validation for '%s': %s", expr, e)
+                return {"expression": expr, "valid": True, "skipped": True}
+        
+        # Determine optimal number of workers
+        max_workers = self.config.max_workers or min(32, len(expressions), (os.cpu_count() or 1) + 4)
+        
+        results = [None] * len(expressions)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all validation tasks
+            future_to_index = {
+                executor.submit(validate_single, expr): i 
+                for i, expr in enumerate(expressions)
+            }
+            
+            # Collect results maintaining original order
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    results[index] = future.result()
+                except Exception as e:
+                    logger.debug("Parallel validation exception for index %d: %s", index, e)
+                    results[index] = {"expression": expressions[index], "valid": True, "skipped": True}
+        
+        logger.debug(f"Parallel validation completed with {max_workers} workers for {len(expressions)} expressions")
         return results
 
     def _clean_latex_for_speech(self, expr: str) -> str:
@@ -125,9 +173,15 @@ class MathBridgeProcessor:
         if cache_hits > 0:
             logger.debug(f"Speech cache hits: {cache_hits}/{len(expressions)}")
         
-        # Process uncached expressions in batch if any
+        # Process uncached expressions if any
         if uncached_expressions:
-            batch_results = self._convert_to_speech_batch_file(uncached_expressions)
+            # Choose processing strategy based on batch size and configuration
+            if self.config.max_workers != 1 and len(uncached_expressions) <= 20:
+                # Use parallel processing for small batches
+                batch_results = self._convert_to_speech_parallel(uncached_expressions)
+            else:
+                # Use batch file processing for larger batches
+                batch_results = self._convert_to_speech_batch_file(uncached_expressions)
             
             # Update cache and results
             for idx, batch_idx in enumerate(uncached_indices):
@@ -207,6 +261,54 @@ class MathBridgeProcessor:
         except Exception as e:
             logger.exception(f"Exception during batch speech conversion: {e}")
             return [None] * len(expressions)
+
+    def _convert_to_speech_parallel(self, expressions: List[str]) -> List[Optional[str]]:
+        """Convert expressions using parallel latex2sre individual calls."""
+        if not expressions:
+            return []
+        
+        latex2sre = self.config.latex2sre_path
+        
+        def convert_single(expr: str) -> Optional[str]:
+            try:
+                proc = subprocess.run(
+                    [latex2sre, "--domain", self.config.sre_domain.value, "--locale", self.config.sre_locale, expr],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    result = proc.stdout.decode("utf-8").strip()
+                    return result if result else None
+                else:
+                    logger.debug(f"latex2sre failed for expr: {expr[:50]}..., err: {proc.stderr.decode('utf-8', errors='ignore')}")
+                    return None
+            except Exception as e:
+                logger.debug(f"latex2sre exception for expr: {expr[:50]}..., err: {e}")
+                return None
+        
+        # Determine optimal number of workers
+        max_workers = self.config.max_workers or min(8, len(expressions), (os.cpu_count() or 1))
+        
+        results = [None] * len(expressions)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all conversion tasks
+            future_to_index = {
+                executor.submit(convert_single, expr): i 
+                for i, expr in enumerate(expressions)
+            }
+            
+            # Collect results maintaining original order
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    results[index] = future.result()
+                except Exception as e:
+                    logger.debug("Parallel speech conversion exception for index %d: %s", index, e)
+                    results[index] = None
+        
+        logger.debug(f"Parallel speech conversion completed with {max_workers} workers for {len(expressions)} expressions")
+        return results
 
     def get_cache_stats(self) -> Dict[str, int]:
         """Get speech generation cache statistics."""

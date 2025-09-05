@@ -22,6 +22,7 @@ class ConfigManager:
             "resume_from": int(os.getenv("MB_RESUME_FROM", "0")),
             "output_path": os.getenv("MB_OUTPUT_PATH", "mathbridge_processed"),
             "latex2sre_path": os.getenv("MB_LATEX2SRE_PATH", "./latex2sre"),
+            "max_workers": int(os.getenv("MB_MAX_WORKERS")) if os.getenv("MB_MAX_WORKERS") else None,
         }
         # Drop None values to let pydantic defaults apply
         data = {k: v for k, v in data.items() if v is not None}
