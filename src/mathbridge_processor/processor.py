@@ -103,7 +103,11 @@ class MathBridgeProcessor:
 
         for i in pbar:
             batch = ds[i : min(i + batch_size, end)]
-            records = [dict(r) for r in batch]
+            # Convert batch dict {key: [values]} to list of dicts [{key: value}]
+            records = [
+                {key: batch[key][idx] for key in batch.keys()}
+                for idx in range(len(next(iter(batch.values()))))
+            ]
             batch_stats, cleaning_stats = self._process_batch(records)
             stats.total_processed += batch_stats.get("processed", 0)
             stats.valid_latex += batch_stats.get("valid", 0)
