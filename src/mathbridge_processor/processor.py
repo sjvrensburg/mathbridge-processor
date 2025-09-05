@@ -27,49 +27,91 @@ class MathBridgeProcessor:
 
     def _verify_tools(self):
         """Verify latex-validator and latex2sre are available."""
-        if shutil.which("latex-validate") is None:
-            logger.warning("latex-validate (from latex-validator) not found in PATH. Validation will be skipped.")
-        latex2sre = self.config.latex2sre_path
-        if latex2sre and Path(latex2sre).exists():
-            return
-        if shutil.which("latex2sre") is None and not (latex2sre and Path(latex2sre).exists()):
+        if shutil.which("latex-validator") is None:
+            logger.warning("latex-validator not found in PATH. Validation will be skipped.")
+        
+        # Try to find latex2sre in multiple locations
+        latex2sre_paths = [
+            self.config.latex2sre_path,
+            shutil.which("latex2sre"),
+            "/home/stefan/bin/latex2sre-linux-x64",
+            "/usr/local/bin/latex2sre",
+            "./latex2sre"
+        ]
+        
+        latex2sre_found = False
+        for path in latex2sre_paths:
+            if path and Path(path).exists():
+                self.config.latex2sre_path = path
+                latex2sre_found = True
+                logger.debug("Found latex2sre at: %s", path)
+                break
+        
+        if not latex2sre_found:
             logger.warning("latex2sre binary not found. Speech generation will be skipped.")
 
     def validate_latex_batch(self, expressions: List[str]) -> List[Dict[str, Any]]:
         """Validate LaTeX batch using latex-validator."""
-        if shutil.which("latex-validate") is None:
+        if shutil.which("latex-validator") is None:
             # Return all as valid if tool missing, but mark skipped
             return [{"expression": e, "valid": True, "skipped": True} for e in expressions]
-        payload = {"expressions": expressions}
-        try:
-            proc = subprocess.run(
-                ["latex-validate", "--json"],
-                input=json.dumps(payload).encode("utf-8"),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            if proc.returncode != 0:
-                logger.error("latex-validate failed: %s", proc.stderr.decode("utf-8", errors="ignore"))
-                return [{"expression": e, "valid": True, "skipped": True} for e in expressions]
-            result = json.loads(proc.stdout.decode("utf-8"))
-            # Expecting a list of dicts with keys: expression, valid, errors
-            return result
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Exception during latex validation: %s", e)
-            return [{"expression": ex, "valid": True, "skipped": True} for ex in expressions]
-
-    def convert_to_speech_batch(self, expressions: List[str]) -> List[Optional[str]]:
-        """Convert LaTeX to spoken text using latex2sre."""
-        latex2sre = self.config.latex2sre_path if self.config.latex2sre_path else shutil.which("latex2sre")
-        if not latex2sre or not Path(latex2sre).exists():
-            # Tool missing: return None
-            return [None for _ in expressions]
-        outputs: List[Optional[str]] = []
+        
+        results = []
         for expr in expressions:
             try:
                 proc = subprocess.run(
-                    [latex2sre, "--domain", self.config.sre_domain.value, "--locale", self.config.sre_locale, "--input", expr],
+                    ["latex-validator"],
+                    input=expr.encode("utf-8"),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    results.append({"expression": expr, "valid": True})
+                else:
+                    results.append({"expression": expr, "valid": False, "error": proc.stderr.decode("utf-8", errors="ignore")})
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Exception during latex validation for '%s': %s", expr, e)
+                results.append({"expression": expr, "valid": True, "skipped": True})
+        
+        return results
+
+    def _clean_latex_for_speech(self, expr: str) -> str:
+        """Clean LaTeX expression by removing math delimiters for speech generation."""
+        # Remove common math delimiters
+        expr = expr.strip()
+        
+        # Remove inline math delimiters: $ ... $
+        if expr.startswith('$') and expr.endswith('$'):
+            expr = expr[1:-1].strip()
+        
+        # Remove display math delimiters: $$ ... $$
+        if expr.startswith('$$') and expr.endswith('$$'):
+            expr = expr[2:-2].strip()
+        
+        # Remove LaTeX math environment delimiters: \( ... \) and \[ ... \]
+        if expr.startswith('\\(') and expr.endswith('\\)'):
+            expr = expr[2:-2].strip()
+        if expr.startswith('\\[') and expr.endswith('\\]'):
+            expr = expr[2:-2].strip()
+            
+        return expr
+
+    def convert_to_speech_batch(self, expressions: List[str]) -> List[Optional[str]]:
+        """Convert LaTeX to spoken text using latex2sre."""
+        if not self.config.latex2sre_path or not Path(self.config.latex2sre_path).exists():
+            # Tool missing: return None
+            return [None for _ in expressions]
+        
+        latex2sre = self.config.latex2sre_path
+        outputs: List[Optional[str]] = []
+        for expr in expressions:
+            try:
+                # Clean the expression by removing dollar signs and other delimiters
+                clean_expr = self._clean_latex_for_speech(expr)
+                
+                proc = subprocess.run(
+                    [latex2sre, "--domain", self.config.sre_domain.value, "--locale", self.config.sre_locale, clean_expr],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     check=False,
@@ -77,7 +119,7 @@ class MathBridgeProcessor:
                 if proc.returncode == 0:
                     outputs.append(proc.stdout.decode("utf-8").strip())
                 else:
-                    logger.debug("latex2sre failed for expr: %s, err: %s", expr, proc.stderr.decode("utf-8", errors="ignore"))
+                    logger.debug("latex2sre failed for expr: %s, err: %s", clean_expr, proc.stderr.decode("utf-8", errors="ignore"))
                     outputs.append(None)
             except Exception as e:  # noqa: BLE001
                 logger.debug("latex2sre exception for expr: %s, err: %s", expr, e)
