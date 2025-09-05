@@ -20,6 +20,7 @@ def process(
     sre_domain: str = typer.Option("clearspeak", help="SRE domain (mathspeak|clearspeak)"),
     sre_locale: str = typer.Option("en", help="SRE locale"),
     latex2sre_path: str = typer.Option("./latex2sre", help="Path to latex2sre binary"),
+    max_workers: int = typer.Option(None, help="Max parallel workers (default: auto-detect)"),
     verbose: bool = typer.Option(False, help="Verbose progress"),
 ):
     """
@@ -44,6 +45,8 @@ def process(
             cfg.sre_locale = sre_locale
         if latex2sre_path:
             cfg.latex2sre_path = latex2sre_path
+        if max_workers is not None:
+            cfg.max_workers = max_workers
     else:
         # build from CLI/env with defaults
         env_cfg = ConfigManager.from_env()
@@ -55,6 +58,7 @@ def process(
             sre_domain=env_cfg.sre_domain.__class__(sre_domain),
             sre_locale=sre_locale or env_cfg.sre_locale,
             latex2sre_path=latex2sre_path or env_cfg.latex2sre_path,
+            max_workers=max_workers if max_workers is not None else env_cfg.max_workers,
         )
 
     processor = MathBridgeProcessor(cfg, verbose=verbose)
@@ -79,8 +83,9 @@ AI Agent Usage:
 - Use ConfigManager.create_template() to create a JSON config file
 - Environment variables (override defaults):
   MB_SRE_DOMAIN, MB_SRE_LOCALE, MB_BATCH_SIZE, MB_MAX_RECORDS, MB_RESUME_FROM,
-  MB_OUTPUT_PATH, MB_LATEX2SRE_PATH
+  MB_OUTPUT_PATH, MB_LATEX2SRE_PATH, MB_MAX_WORKERS
 - Run: mathbridge-process process --config config.json
+- Use --max-workers N to control parallel processing (default: auto-detect)
         """
     )
 

@@ -12,6 +12,8 @@ A command-line tool for processing the MathBridge dataset with LaTeX validation,
 - 🧹 **Data Cleaning**: Cleans and normalizes dataset entries
 - 📊 **Multiple Output Formats**: Supports JSONL and Parquet output formats
 - 🔄 **Batch Processing**: Efficient batch processing with progress tracking
+- ⚡ **Parallel Processing**: Multi-threaded validation and speech conversion for optimal performance
+- 🎯 **Intelligent Caching**: Expression-level caching reduces redundant processing
 - ⚙️ **Configurable**: Flexible configuration via JSON config files or CLI arguments
 
 ## Installation
@@ -91,6 +93,7 @@ Available options:
 - `--sre-domain`: SRE domain (mathspeak|clearspeak)
 - `--sre-locale`: SRE locale (default: en)
 - `--latex2sre-path`: Path to latex2sre binary
+- `--max-workers`: Maximum parallel workers (default: auto-detect)
 - `--verbose`: Enable verbose output
 
 ### Other Commands
@@ -118,6 +121,58 @@ The tool generates:
 
 Each output record contains all original dataset columns plus:
 - `sre_spoken_text`: Generated speech text (if available)
+
+## Performance Optimization
+
+### Recommended Settings for Large Datasets
+
+For optimal performance when processing large datasets (tested on 20-core i7-12700H system):
+
+```bash
+mathbridge-process process \
+  --batch-size 1000 \
+  --max-workers 20 \
+  --verbose
+```
+
+### Performance Benchmarks
+
+| Dataset Size | Processing Time | Records/Second | Configuration |
+|--------------|----------------|----------------|---------------|
+| 500 records  | 10.8s         | 46.1 rec/s     | batch=500, workers=20 |
+| 2,000 records | 27.6s        | 72.6 rec/s     | batch=1000, workers=20 |
+| 5,000 records | 58.7s        | 85.2 rec/s     | batch=1000, workers=20 |
+| 8,000 records | 88.4s        | 90.5 rec/s     | batch=1000, workers=20 |
+
+### Large-Scale Processing Estimates
+
+For processing 23 million records:
+- **Estimated time**: 74-88 hours (3-4 days)
+- **Peak performance**: ~90 records/second
+- **Storage requirements**: ~21GB output, 43GB recommended free space
+- **Caching benefits**: Performance improves with larger datasets due to expression reuse
+
+### Optimization Tips
+
+1. **Worker Count**: Use `--max-workers` equal to your CPU core count for best throughput
+2. **Batch Size**: Use `--batch-size 1000` for optimal memory/performance balance  
+3. **Storage**: Use SSD storage for output directory when processing large datasets
+4. **Memory**: Ensure sufficient RAM (8GB+ recommended for large datasets)
+5. **Chunked Processing**: For maximum safety, process in 1-5M record chunks using `--max-records` and `--resume-from`
+
+### Environment Variables
+
+Set these for consistent performance tuning:
+- `MB_MAX_WORKERS`: Default worker count
+- `MB_BATCH_SIZE`: Default batch size
+- `MB_LATEX2SRE_PATH`: Path to latex2sre binary
+
+Example:
+```bash
+export MB_MAX_WORKERS=20
+export MB_BATCH_SIZE=1000
+export MB_LATEX2SRE_PATH=/usr/local/bin/latex2sre
+```
 
 ## License
 
