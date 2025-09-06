@@ -75,6 +75,66 @@ def create_config(output: str = "config.json"):
 
 
 @app.command()
+def recover(
+    checkpoint_dir: str = typer.Argument(help="Directory containing checkpoint files"),
+    verbose: bool = typer.Option(False, help="Verbose output"),
+):
+    """
+    Recover complete final output files from checkpoint data.
+    
+    This command rebuilds the final JSONL and Parquet files from existing checkpoint
+    data, useful when the original processing completed but only partial output files
+    were generated due to the checkpointing bug.
+    
+    The checkpoint directory should contain:
+    - checkpoint.jsonl (required)
+    - checkpoint_stats.json (optional)
+    - checkpoint_cleaning.json (optional)
+    """
+    checkpoint_path = Path(checkpoint_dir)
+    
+    if not checkpoint_path.exists():
+        console.print(f"[red]Error: Checkpoint directory not found: {checkpoint_dir}[/red]")
+        raise typer.Exit(1)
+    
+    ckpt_file = checkpoint_path / "checkpoint.jsonl"
+    if not ckpt_file.exists():
+        console.print(f"[red]Error: Checkpoint file not found: {ckpt_file}[/red]")
+        console.print("The directory should contain a 'checkpoint.jsonl' file from a previous processing run.")
+        raise typer.Exit(1)
+    
+    console.print(f"[green]Found checkpoint directory: {checkpoint_dir}[/green]")
+    
+    # Create a minimal config for recovery
+    from .config import ConfigManager
+    env_cfg = ConfigManager.from_env()
+    cfg = ProcessingConfig(
+        output_path=str(checkpoint_path),
+        batch_size=env_cfg.batch_size,
+        max_records=None,  # Process all records in checkpoint
+        resume_from=0,
+        sre_domain=env_cfg.sre_domain,
+        sre_locale=env_cfg.sre_locale,
+        latex2sre_path=env_cfg.latex2sre_path,
+        max_workers=env_cfg.max_workers,
+    )
+    
+    # Create processor and run recovery
+    processor = MathBridgeProcessor(cfg, verbose=verbose)
+    
+    try:
+        result = processor.recover_from_checkpoint(checkpoint_dir)
+        console.print("[green]Recovery completed successfully![/green]")
+        console.print(f"Generated files:")
+        for file_path in result.output_files:
+            console.print(f"  - {file_path}")
+        console.print(f"Total records recovered: {result.stats.total_processed}")
+    except Exception as e:
+        console.print(f"[red]Recovery failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
 def agent_info():
     """Show AI agent usage instructions."""
     console.print(
@@ -86,6 +146,7 @@ AI Agent Usage:
   MB_OUTPUT_PATH, MB_LATEX2SRE_PATH, MB_MAX_WORKERS
 - Run: mathbridge-process process --config config.json
 - Use --max-workers N to control parallel processing (default: auto-detect)
+- Use: mathbridge-process recover <checkpoint_dir> to rebuild output from checkpoint data
         """
     )
 

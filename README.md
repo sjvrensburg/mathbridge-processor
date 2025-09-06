@@ -14,6 +14,7 @@ A command-line tool for processing the MathBridge dataset with LaTeX validation,
 - 🔄 **Batch Processing**: Efficient batch processing with progress tracking
 - ⚡ **Parallel Processing**: Multi-threaded validation and speech conversion for optimal performance
 - 🎯 **Intelligent Caching**: Expression-level caching reduces redundant processing
+- 🔧 **Recovery Tool**: Rebuild complete output files from checkpoint data without reprocessing
 - ⚙️ **Configurable**: Flexible configuration via JSON config files or CLI arguments
 
 ## Installation
@@ -96,6 +97,26 @@ Available options:
 - `--max-workers`: Maximum parallel workers (default: auto-detect)
 - `--verbose`: Enable verbose output
 
+### Recovery Tool
+
+If your processing completed but you only have partial output files (due to the checkpointing issue fixed in v0.1.1), you can recover the complete dataset from checkpoint data:
+
+```bash
+mathbridge-process recover <checkpoint_directory> --verbose
+```
+
+This command:
+- Reads all processed data from the checkpoint file
+- Rebuilds complete JSONL and Parquet output files  
+- Completes in minutes instead of hours/days of reprocessing
+- Preserves all original processing statistics
+
+**Example:**
+```bash
+# Recover from existing checkpoint data
+mathbridge-process recover mathbridge_processed --verbose
+```
+
 ### Other Commands
 
 Show AI agent usage instructions:
@@ -118,9 +139,25 @@ The tool generates:
 - `mathbridge_processed.jsonl`: Processed dataset in JSONL format
 - `mathbridge_processed.parquet`: Processed dataset in Parquet format  
 - `cleaning_report.json`: Report of cleaning operations performed
+- `checkpoint.jsonl`: Incremental processing checkpoint (for recovery)
 
 Each output record contains all original dataset columns plus:
 - `sre_spoken_text`: Generated speech text (if available)
+
+## Important Fixes (v0.1.1)
+
+### Critical Data Loss Bug Fixed
+
+**Issue**: Previous versions had a critical bug where only the final batch of records (~5,000-10,000) was saved to output files, despite processing all records successfully. This caused 99%+ data loss in the final output.
+
+**Root Cause**: The checkpointing logic incorrectly cleared the output buffer every 10,000 records, keeping only the last partial batch.
+
+**Fix**: 
+- Updated final dataset generation to read all checkpoint data
+- Added recovery tool to rebuild output files from existing checkpoints
+- All processed records are now correctly included in final output
+
+**Impact**: Users who processed large datasets with v0.1.0 can use the `recover` command to get their complete results without reprocessing.
 
 ## Performance Optimization
 
