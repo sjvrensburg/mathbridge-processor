@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mathbridge-processor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Process MathBridge dataset with LaTeX validation, speech generation, and cleaning"
 authors = [
     {name = "Stefan van Rensburg", email = "sjvrensburg@users.noreply.github.com"},
