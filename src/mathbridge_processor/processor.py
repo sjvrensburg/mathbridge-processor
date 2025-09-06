@@ -510,3 +510,79 @@ class MathBridgeProcessor:
 
         logger.info("Saved final dataset with %d records to %s", len(records), out_dir)
         return files
+    
+    def recover_from_checkpoint(self, checkpoint_dir: str) -> ProcessingResult:
+        """Recover complete final output files from existing checkpoint data."""
+        checkpoint_path = Path(checkpoint_dir)
+        
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
+        
+        ckpt_file = checkpoint_path / "checkpoint.jsonl"
+        if not ckpt_file.exists():
+            raise FileNotFoundError(f"Checkpoint file not found: {ckpt_file}")
+        
+        # Read all records from checkpoint
+        logger.info("Reading checkpoint data from: %s", ckpt_file)
+        all_records = []
+        
+        with ckpt_file.open("r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                if line.strip():
+                    try:
+                        record = json.loads(line.strip())
+                        all_records.append(record)
+                    except json.JSONDecodeError as e:
+                        logger.warning("Skipping invalid JSON at line %d: %s", line_num, e)
+                        continue
+        
+        logger.info("Successfully loaded %d records from checkpoint", len(all_records))
+        
+        # Load existing stats and cleaning data if available
+        stats_file = checkpoint_path / "checkpoint_stats.json"
+        cleaning_file = checkpoint_path / "checkpoint_cleaning.json"
+        
+        stats = ProcessingStats()
+        cleaning_stats = CleaningStats()
+        
+        if stats_file.exists():
+            try:
+                with stats_file.open("r") as f:
+                    stats_data = json.load(f)
+                    stats = ProcessingStats(**stats_data)
+                logger.info("Loaded processing stats: %s", stats_data)
+            except Exception as e:
+                logger.warning("Could not load stats file: %s", e)
+        
+        if cleaning_file.exists():
+            try:
+                with cleaning_file.open("r") as f:
+                    cleaning_data = json.load(f)
+                    cleaning_stats = CleaningStats.from_counts(cleaning_data)
+                logger.info("Loaded cleaning stats: %s", cleaning_data)
+            except Exception as e:
+                logger.warning("Could not load cleaning file: %s", e)
+        
+        # Update output path to use the checkpoint directory
+        original_output_path = self.config.output_path
+        self.config.output_path = str(checkpoint_path)
+        
+        # Generate final output files
+        logger.info("Generating final output files...")
+        files = self._save_final_dataset(all_records, cleaning_stats)
+        
+        # Restore original output path
+        self.config.output_path = original_output_path
+        
+        # Create result
+        result = ProcessingResult(
+            config=self.config,
+            stats=stats,
+            output_files=files,
+            errors=[],
+            success=True,
+            cache_stats={"total_expressions_cached": 0, "successful_cached": 0, "failed_cached": 0}  # No cache in recovery
+        )
+        
+        logger.info("Recovery complete! Generated %d output files with %d total records", len(files), len(all_records))
+        return result
